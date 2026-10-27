@@ -1,9 +1,11 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/recipes";
 
 function App() {
   const [js_recipes, js_setRecipes] = useState([]);
+  const [js_isLoading, js_setIsLoading] = useState(true);
   const [js_form, js_setForm] = useState({
     name: "",
     category: "Breakfast",
@@ -12,7 +14,32 @@ function App() {
     cookingTime: ""
   });
   const [js_editId, js_setEditId] = useState(null);
-  const [js_message, js_setMessage] = useState("");
+  const [js_message, js_setMessage] = useState({ text: "", type: "" });
+
+  // Fetch all recipes from MongoDB on initial mount
+  const fetchRecipes = async () => {
+    try {
+      js_setIsLoading(true);
+      const res = await fetch(API_URL);
+      if (!res.ok) {
+        throw new Error(`Failed to load recipes (status ${res.status})`);
+      }
+      const data = await res.json();
+      js_setRecipes(data);
+    } catch (err) {
+      console.error("Error fetching recipes:", err);
+      js_setMessage({
+        text: "Could not load recipes from database. Please verify backend is running.",
+        type: "error"
+      });
+    } finally {
+      js_setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecipes();
+  }, []);
 
   function js_handleChange(event) {
     const { name, value } = event.target;
@@ -23,7 +50,7 @@ function App() {
     });
   }
 
-  function js_handleSubmit(event) {
+  async function js_handleSubmit(event) {
     event.preventDefault();
 
     if (
@@ -33,39 +60,76 @@ function App() {
       js_form.cookingTime === "" ||
       Number(js_form.cookingTime) <= 0
     ) {
-      js_setMessage("Please enter valid values in all required fields.");
+      js_setMessage({
+        text: "Please enter valid values in all required fields.",
+        type: "error"
+      });
       return;
     }
 
-    if (js_editId !== null) {
-      js_setRecipes(
-        js_recipes.map((js_recipe) =>
-          js_recipe.id === js_editId
-            ? { ...js_form, id: js_editId }
-            : js_recipe
-        )
-      );
+    const payload = {
+      name: js_form.name.trim(),
+      category: js_form.category,
+      ingredients: js_form.ingredients.trim(),
+      steps: js_form.steps.trim(),
+      cookingTime: Number(js_form.cookingTime)
+    };
 
-      js_setMessage("Recipe updated successfully!");
-    } else {
-      const js_newRecipe = {
-        ...js_form,
-        id: Date.now()
-      };
+    try {
+      if (js_editId !== null) {
+        // UPDATE existing recipe in MongoDB
+        const res = await fetch(`${API_URL}/${js_editId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
 
-      js_setRecipes([...js_recipes, js_newRecipe]);
-      js_setMessage("Recipe added successfully!");
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || "Failed to update recipe.");
+        }
+
+        const updatedRecipe = await res.json();
+        js_setRecipes(
+          js_recipes.map((r) =>
+            (r._id || r.id) === js_editId ? updatedRecipe : r
+          )
+        );
+        js_setMessage({ text: "Recipe updated successfully!", type: "success" });
+      } else {
+        // CREATE new recipe in MongoDB
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || "Failed to add recipe.");
+        }
+
+        const newRecipe = await res.json();
+        js_setRecipes([newRecipe, ...js_recipes]);
+        js_setMessage({ text: "Recipe added successfully!", type: "success" });
+      }
+
+      // Reset form
+      js_setForm({
+        name: "",
+        category: "Breakfast",
+        ingredients: "",
+        steps: "",
+        cookingTime: ""
+      });
+      js_setEditId(null);
+    } catch (err) {
+      console.error("Error saving recipe:", err);
+      js_setMessage({
+        text: err.message || "Failed to save recipe. Please check your backend connection.",
+        type: "error"
+      });
     }
-
-    js_setForm({
-      name: "",
-      category: "Breakfast",
-      ingredients: "",
-      steps: "",
-      cookingTime: ""
-    });
-
-    js_setEditId(null);
   }
 
   function js_handleEdit(js_recipe) {
@@ -77,22 +141,39 @@ function App() {
       cookingTime: js_recipe.cookingTime
     });
 
-    js_setEditId(js_recipe.id);
-    js_setMessage("");
+    js_setEditId(js_recipe._id || js_recipe.id);
+    js_setMessage({ text: "", type: "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function js_handleDelete(js_id) {
+  async function js_handleDelete(js_id) {
     const js_confirm = window.confirm(
       "Are you sure you want to delete this recipe?"
     );
 
-    if (js_confirm) {
+    if (!js_confirm) return;
+
+    try {
+      const res = await fetch(`${API_URL}/${js_id}`, {
+        method: "DELETE"
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to delete recipe.");
+      }
+
       js_setRecipes(
-        js_recipes.filter((js_recipe) => js_recipe.id !== js_id)
+        js_recipes.filter((js_recipe) => (js_recipe._id || js_recipe.id) !== js_id)
       );
 
-      js_setMessage("Recipe deleted successfully!");
+      js_setMessage({ text: "Recipe deleted successfully!", type: "success" });
+    } catch (err) {
+      console.error("Error deleting recipe:", err);
+      js_setMessage({
+        text: err.message || "Failed to delete recipe from server.",
+        type: "error"
+      });
     }
   }
 
@@ -129,9 +210,12 @@ function App() {
             </div>
           </div>
 
-          {js_message && (
-            <div className="message" role="status">
-              {js_message}
+          {js_message.text && (
+            <div
+              className={`message ${js_message.type === "error" ? "error" : ""}`}
+              role="status"
+            >
+              {js_message.text}
             </div>
           )}
 
@@ -226,7 +310,7 @@ function App() {
                       steps: "",
                       cookingTime: ""
                     });
-                    js_setMessage("");
+                    js_setMessage({ text: "", type: "" });
                   }}
                 >
                   Cancel
@@ -248,7 +332,13 @@ function App() {
             </span>
           </div>
 
-          {js_recipes.length === 0 ? (
+          {js_isLoading ? (
+            <div className="empty-state">
+              <div className="empty-icon">⏳</div>
+              <h3>Loading recipes...</h3>
+              <p>Fetching your collection from the database.</p>
+            </div>
+          ) : js_recipes.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">📖</div>
               <h3>Your cookbook is waiting!</h3>
@@ -256,50 +346,53 @@ function App() {
             </div>
           ) : (
             <div className="recipe-grid">
-              {js_recipes.map((js_recipe) => (
-                <article className="recipe-card" key={js_recipe.id}>
-                  <div className="card-top">
-                    <span className="category-badge">
-                      {js_recipe.category}
-                    </span>
-                    <span className="food-icon">🍽️</span>
-                  </div>
+              {js_recipes.map((js_recipe) => {
+                const recipeId = js_recipe._id || js_recipe.id;
+                return (
+                  <article className="recipe-card" key={recipeId}>
+                    <div className="card-top">
+                      <span className="category-badge">
+                        {js_recipe.category}
+                      </span>
+                      <span className="food-icon">🍽️</span>
+                    </div>
 
-                  <h3>{js_recipe.name}</h3>
+                    <h3>{js_recipe.name}</h3>
 
-                  <p className="cooking-time">
-                    ◷ {js_recipe.cookingTime} minutes
-                  </p>
+                    <p className="cooking-time">
+                      ◷ {js_recipe.cookingTime} minutes
+                    </p>
 
-                  <details className="recipe-details">
-                    <summary>View full recipe</summary>
+                    <details className="recipe-details">
+                      <summary>View full recipe</summary>
 
-                    <h4>Ingredients</h4>
-                    <p className="detail-text">{js_recipe.ingredients}</p>
+                      <h4>Ingredients</h4>
+                      <p className="detail-text">{js_recipe.ingredients}</p>
 
-                    <h4>Preparation Steps</h4>
-                    <p className="detail-text">{js_recipe.steps}</p>
-                  </details>
+                      <h4>Preparation Steps</h4>
+                      <p className="detail-text">{js_recipe.steps}</p>
+                    </details>
 
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      className="edit-button"
-                      onClick={() => js_handleEdit(js_recipe)}
-                    >
-                      Edit
-                    </button>
+                    <div className="card-actions">
+                      <button
+                        type="button"
+                        className="edit-button"
+                        onClick={() => js_handleEdit(js_recipe)}
+                      >
+                        Edit
+                      </button>
 
-                    <button
-                      type="button"
-                      className="delete-button"
-                      onClick={() => js_handleDelete(js_recipe.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
+                      <button
+                        type="button"
+                        className="delete-button"
+                        onClick={() => js_handleDelete(recipeId)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
@@ -313,4 +406,3 @@ function App() {
 }
 
 export default App;
-

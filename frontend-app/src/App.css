@@ -192,6 +192,11 @@
   font-size: 14px;
 }
 
+.message.error {
+  background: #fde8e4;
+  color: #a34c40;
+}
+
 .recipe-count {
   padding: 8px 13px;
   border-radius: 20px;
