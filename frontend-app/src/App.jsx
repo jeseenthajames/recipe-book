@@ -15,6 +15,7 @@ function App() {
   });
   const [js_editId, js_setEditId] = useState(null);
   const [js_message, js_setMessage] = useState({ text: "", type: "" });
+  const [js_selectedRecipe, js_setSelectedRecipe] = useState(null);
 
   // Fetch all recipes from MongoDB on initial mount
   const fetchRecipes = async () => {
@@ -363,15 +364,13 @@ function App() {
                       ◷ {js_recipe.cookingTime} minutes
                     </p>
 
-                    <details className="recipe-details">
-                      <summary>View full recipe</summary>
-
-                      <h4>Ingredients</h4>
-                      <p className="detail-text">{js_recipe.ingredients}</p>
-
-                      <h4>Preparation Steps</h4>
-                      <p className="detail-text">{js_recipe.steps}</p>
-                    </details>
+                    <button
+                      type="button"
+                      className="view-details-button"
+                      onClick={() => js_setSelectedRecipe(js_recipe)}
+                    >
+                      View Details
+                    </button>
 
                     <div className="card-actions">
                       <button
@@ -401,6 +400,67 @@ function App() {
       <footer className="footer">
         <p>Made for food lovers, one recipe at a time. ♡</p>
       </footer>
+
+      {/* Recipe Details Modal */}
+      {js_selectedRecipe && (
+        <div
+          className="modal-overlay"
+          onClick={() => js_setSelectedRecipe(null)}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+          >
+            <div className="modal-header">
+              <div className="modal-badge-group">
+                <span className="category-badge">
+                  {js_selectedRecipe.category}
+                </span>
+                <span className="cooking-time-badge">
+                  ◷ {js_selectedRecipe.cookingTime} minutes
+                </span>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => js_setSelectedRecipe(null)}
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <h2 id="modal-title" className="modal-title">
+              {js_selectedRecipe.name}
+            </h2>
+
+            <div className="modal-body">
+              <section className="modal-section">
+                <h3>Ingredients</h3>
+                <p className="modal-text">{js_selectedRecipe.ingredients}</p>
+              </section>
+
+              <section className="modal-section">
+                <h3>Preparation Steps</h3>
+                <p className="modal-text">{js_selectedRecipe.steps}</p>
+              </section>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => js_setSelectedRecipe(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
